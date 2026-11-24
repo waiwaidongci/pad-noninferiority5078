@@ -12,9 +12,9 @@ from src.utils.exports import write_csv
 
 
 def calculate(job):
-    key, claim, rows, options = job
+    key, claim, rows, batches, options = job
     try:
-        report = compute(rows, options)
+        report = compute(rows, options, batches)
         report['columns'] = list(dict.fromkeys(key for row in report['rows'] for key in row))
         report['metric_order'] = list(report['metrics'])
         json.dumps(report, allow_nan=False)

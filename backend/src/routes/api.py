@@ -7,8 +7,8 @@ from src.constants.enums import Role
 from src.controllers.query import delivery_status, jobs, recent_activity, require_row, revisions
 from src.models.tables import datasets, runs
 from src.schemas.requests import Delivery, Import, Login, Review, Run
-from src.services.data import PROFILE, csv_records, save_revision
-from src.services.domain import sample_rows
+from src.services.data import PROFILE, batch_records, csv_records, save_revision, validate_correspondence
+from src.services.domain import sample_batch_rows, sample_rows
 from src.services.workflow import add_run, cancel_schedule, review_run, schedule_report
 from src.utils.exports import write_csv
 from src.utils.security import allowed, authenticate, signed_in
@@ -43,6 +43,12 @@ def example(account=Depends(signed_in)):
     return download_csv(write_csv(sample_rows(), [c['key'] for c in PROFILE['columns']], False), PROFILE['filename'])
 
 
+@router.get('/example-batches.csv')
+def example_batches(account=Depends(signed_in)):
+    return download_csv(write_csv(sample_batch_rows(), [c['key'] for c in PROFILE['batch_columns']], False),
+                        PROFILE['batch_filename'])
+
+
 @router.get('/datasets')
 def list_datasets(account=Depends(signed_in)):
     return revisions()
@@ -52,14 +58,19 @@ def list_datasets(account=Depends(signed_in)):
 def get_dataset(key: int, account=Depends(signed_in)):
     dataset = require_row(datasets, key, '数据版本')
     records = dataset.pop('records')
-    return {**dataset, 'count': len(records), 'records': records[:100]}
+    batches = dataset.pop('batches') or []
+    return {**dataset, 'count': len(records), 'records': records[:100],
+            'batch_count': len({row['calibration_batch'].casefold() for row in batches}),
+            'batches': batches[:100]}
 
 
 @router.post('/datasets', status_code=201)
 def import_data(body: Import, account=Depends(analyst)):
     rows = csv_records(body.csv)
-    key, created = save_revision(body.name, rows, account['username'])
-    return {'id': key, 'created': created, 'rows': len(rows)}
+    batches = batch_records(body.batches)
+    validate_correspondence(rows, batches)
+    key, created = save_revision(body.name, rows, batches, account['username'])
+    return {'id': key, 'created': created, 'rows': len(rows), 'stations': len(batches)}
 
 
 @router.get('/runs')

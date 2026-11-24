@@ -9,6 +9,7 @@ from scripts.seed_demo import seed
 from src.config.settings import SEED
 from src.middlewares.http import install
 from src.models.database import cache, engine
+from src.models.migrate import ensure_columns
 from src.models.tables import metadata
 from src.routes.api import router
 
@@ -16,6 +17,9 @@ from src.routes.api import router
 @asynccontextmanager
 async def lifespan(app):
     metadata.create_all(engine)
+    added = ensure_columns(engine)
+    if added:
+        logging.info('Added columns for existing deployment: %s', ', '.join(added))
     if SEED:
         try:
             logging.info('Demo seed: %s', seed())

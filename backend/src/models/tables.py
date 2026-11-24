@@ -5,10 +5,11 @@ users = Table('workspace_users', metadata, Column('username', String(40), primar
               Column('role', String(20), nullable=False), Column('password', String(160), nullable=False))
 datasets = Table('data_revisions', metadata, Column('id', Integer, primary_key=True),
                  Column('name', String(180), nullable=False), Column('checksum', String(64), nullable=False, unique=True),
-                 Column('records', JSON, nullable=False), Column('owner', String(40), nullable=False),
-                 Column('created', Double, nullable=False))
+                 Column('records', JSON, nullable=False), Column('batches', JSON),
+                 Column('owner', String(40), nullable=False), Column('created', Double, nullable=False))
 runs = Table('analysis_runs', metadata, Column('id', Integer, primary_key=True),
              Column('dataset_id', Integer, nullable=False, index=True), Column('options', JSON, nullable=False),
+             Column('records', JSON), Column('batches', JSON),
              Column('state', String(16), nullable=False, index=True), Column('owner', String(40), nullable=False),
              Column('created', Double, nullable=False), Column('started', Double), Column('finished', Double),
              Column('result', JSON), Column('error', Text), Column('decision', String(16)),

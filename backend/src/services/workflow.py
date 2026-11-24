@@ -6,17 +6,29 @@ from sqlalchemy import and_, insert, or_, select, update
 from src.constants.enums import State
 from src.models.database import add_event, engine, fetch_one
 from src.models.tables import datasets, deliveries, runs, schedules
-from src.services.data import parse_options
+from src.services.data import parse_options, validate_correspondence
 
 
 def add_run(body, actor):
     options = parse_options(body.options)
     now = time.time()
     with engine.begin() as connection:
-        if fetch_one(connection, datasets, body.dataset_id) is None:
+        dataset = fetch_one(connection, datasets, body.dataset_id)
+        if dataset is None:
             raise HTTPException(404, '数据版本不存在。')
-        key = connection.execute(insert(runs).values(dataset_id=body.dataset_id, options=options,
-                    state=State.queued.value, owner=actor, created=now)).inserted_primary_key[0]
+        if not dataset['batches']:
+            raise HTTPException(422, '该数据版本缺少站点与校准批次对应表，请重新导入后再提交计算。')
+        # Bind the accepted attribution and readings to the run so a worker
+        # that resumes after an interruption still uses what the analyst
+        # submitted, even if a corrected revision lands in the meantime.
+        try:
+            validate_correspondence(dataset['records'], dataset['batches'])
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        key = connection.execute(insert(runs).values(
+            dataset_id=body.dataset_id, options=options, records=dataset['records'],
+            batches=dataset['batches'], state=State.queued.value, owner=actor, created=now,
+        )).inserted_primary_key[0]
         add_event(connection, actor, 'queue', key, now)
     return {'id': key, 'state': State.queued.value}
 
@@ -33,8 +45,13 @@ def claim_run():
                                    .values(state=State.running.value, started=now))
         if claim.rowcount != 1:
             return None
-        data = fetch_one(connection, datasets, run['dataset_id'])
-        return key, now, data['records'], run['options']
+        records, batches = run['records'], run['batches']
+        if records is None or batches is None:
+            # Runs queued before attribution snapshots existed fall back to the
+            # bound revision, which is still the submission-time data version.
+            data = fetch_one(connection, datasets, run['dataset_id'])
+            records, batches = data['records'], data['batches']
+        return key, now, records, batches, run['options']
 
 
 def finish_run(key, claim, result, error):

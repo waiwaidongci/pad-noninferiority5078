@@ -11,8 +11,10 @@ from sqlalchemy.exc import IntegrityError
 
 from src.models.database import add_event, engine
 from src.models.tables import datasets
+from src.services.domain import check_correspondence, station_batch_map
 
 PROFILE = json.loads(Path(__file__).with_name('domain.json').read_text(encoding='utf-8'))
+BATCH_COLUMNS = PROFILE['batch_columns']
 
 
 def convert(value, field):
@@ -33,34 +35,46 @@ def convert(value, field):
     return number
 
 
-def csv_records(text):
+def _dict_rows(text, columns, label):
     reader = csv.DictReader(io.StringIO(text.lstrip('\ufeff'), newline=''), strict=True)
-    columns = PROFILE['columns']
+    required = {field['key'] for field in columns}
     try:
         fieldnames = reader.fieldnames
     except csv.Error as error:
-        raise ValueError('CSV 表头的引号格式有误。') from error
-    required = {field['key'] for field in columns}
+        raise ValueError(f'{label} CSV 表头的引号格式有误。') from error
     if not fieldnames or len(fieldnames) != len(required) or set(fieldnames) != required:
-        raise ValueError('CSV 表头须为 ' + '、'.join(field['key'] for field in columns))
+        raise ValueError(label + ' CSV 表头须为 ' + '、'.join(field['key'] for field in columns))
     rows = []
     try:
         for row in reader:
             if None in row:
-                raise ValueError(f'第 {reader.line_num} 行列数多于表头。')
+                raise ValueError(f'{label} CSV 第 {reader.line_num} 行列数多于表头。')
             normalized = {}
             for field in columns:
                 try:
                     normalized[field['key']] = convert(row[field['key']], field)
                 except (ValueError, TypeError, OverflowError) as error:
-                    raise ValueError(f"第 {reader.line_num} 行 {field['label']} 无效（{error}）。") from error
+                    raise ValueError(f"{label} CSV 第 {reader.line_num} 行 {field['label']} 无效（{error}）。") from error
             rows.append(normalized)
             if len(rows) > 5000:
-                raise ValueError('单份数据最多 5000 行。')
+                raise ValueError(f'单份{label}数据最多 5000 行。')
     except csv.Error as error:
-        raise ValueError('CSV 引号或字段格式有误。') from error
+        raise ValueError(f'{label} CSV 引号或字段格式有误。') from error
     if not rows:
-        raise ValueError('CSV 需要至少一条数据。')
+        raise ValueError(f'{label} CSV 需要至少一条数据。')
+    return rows
+
+
+def csv_records(text):
+    return _dict_rows(text, PROFILE['columns'], '测量记录')
+
+
+def batch_records(text):
+    """Parse the station → calibration batch correspondence table."""
+    rows = _dict_rows(text, BATCH_COLUMNS, '站点与批次对应表')
+    # Structural validation (blank or duplicated stations/batches) happens in
+    # the domain layer so the analysis and the import share one definition.
+    station_batch_map(rows)
     return rows
 
 
@@ -77,10 +91,22 @@ def parse_options(values):
     return output
 
 
-def save_revision(name, records, owner):
+def validate_correspondence(records, batches):
+    """Reject a batch table that misses or adds stations relative to the data."""
+    check_correspondence([row['station_id'] for row in records], station_batch_map(batches))
+
+
+def save_revision(name, records, batches, owner):
+    """Store an immutable data revision.
+
+    The checksum covers both the measurement records and the calibration batch
+    attribution, so correcting an attribution opens a new revision instead of
+    silently reusing a version created for the previous attribution.
+    """
     if not name.strip():
         raise ValueError('数据名称不能为空。')
-    payload = json.dumps(records, sort_keys=True, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
+    payload = json.dumps({'records': records, 'batches': batches}, sort_keys=True, ensure_ascii=False,
+                         separators=(',', ':'), allow_nan=False)
     checksum = hashlib.sha256(payload.encode()).hexdigest()
     now = time.time()
     existing = select(datasets.c.id).where(datasets.c.checksum == checksum)
@@ -90,7 +116,8 @@ def save_revision(name, records, owner):
             if found is not None:
                 return found, False
             key = connection.execute(insert(datasets).values(name=name.strip(), owner=owner, records=records,
-                                                             checksum=checksum, created=now)).inserted_primary_key[0]
+                                                             batches=batches, checksum=checksum,
+                                                             created=now)).inserted_primary_key[0]
             add_event(connection, owner, 'import', key, now)
             return key, True
     except IntegrityError:

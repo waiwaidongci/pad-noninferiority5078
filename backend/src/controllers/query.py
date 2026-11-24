@@ -12,8 +12,8 @@ def list_rows(table, fields=None, limit=100):
 
 
 def revisions():
-    columns = [field for field in datasets.c if field.name != 'records']
-    return list_rows(datasets, columns)
+    fields = [field for field in datasets.c if field.name not in ('records', 'batches')]
+    return list_rows(datasets, fields)
 
 
 def require_row(table, key, label):

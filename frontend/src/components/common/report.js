@@ -12,8 +12,14 @@ function chart(spec) {
   }).join('')}</figure>`;
 }
 
+function panel(spec) {
+  const columns = spec.columns?.length ? spec.columns : Object.keys(spec.rows[0] || {}).map(key => ({key,label:key}));
+  return `<section class="panel"><h3>${esc(spec.title)}</h3>${spec.summary ? `<p class="hint">${esc(spec.summary)}</p>` : ''}${table(spec.rows,columns)}</section>`;
+}
+
 export function report(result) {
   const metrics = (result.metric_order || Object.keys(result.metrics)).map(key => [key,result.metrics[key]]);
   const columns = result.columns?.map(key => ({key,label:key}));
-  return `<div class="reading"><h2>${esc(result.headline)}</h2><dl class="metrics">${metrics.map(([key,value]) => `<div><dt>${esc(key)}</dt><dd>${esc(display(value))}</dd></div>`).join('')}</dl>${chart(result.chart)}<h3>业务明细</h3>${table(result.rows,columns)}<h3>口径与限制</h3><ul>${result.notes.map(note => `<li>${esc(note)}</li>`).join('')}</ul></div>`;
+  const panels = (result.panels || []).map(panel).join('');
+  return `<div class="reading"><h2>${esc(result.headline)}</h2><dl class="metrics">${metrics.map(([key,value]) => `<div><dt>${esc(key)}</dt><dd>${esc(display(value))}</dd></div>`).join('')}</dl>${chart(result.chart)}${panels}<h3>业务明细</h3>${table(result.rows,columns)}<h3>口径与限制</h3><ul>${result.notes.map(note => `<li>${esc(note)}</li>`).join('')}</ul></div>`;
 }

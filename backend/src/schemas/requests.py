@@ -12,6 +12,7 @@ class Login(BaseModel):
 class Import(BaseModel):
     name: str = Field(min_length=1, max_length=180)
     csv: str = Field(min_length=1, max_length=1_000_000)
+    batches: str = Field(min_length=1, max_length=200_000)
 
 
 class Run(BaseModel):
