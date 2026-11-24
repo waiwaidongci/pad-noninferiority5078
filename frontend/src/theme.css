@@ -1,0 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Asul&display=swap');
+:root {
+  --text-font: 'Outfit'; --title-font: 'Asul';
+  --paper: oklch(.975 .012 28); --surface: oklch(.994 .006 28);
+  --ink: oklch(.235 .035 28); --quiet: oklch(.435 .038 28);
+  --stripe: oklch(.961 .014 28); --rule: oklch(.858 .024 28);
+  --accent: oklch(.445 0.138 28); --button-ink: oklch(.98 .007 28);
+  --focus: oklch(.64 0.138 28);
+  --side: oklch(.258 .041 28);
+  --side-ink: oklch(.975 .011 28);
+  --highlight: oklch(.36 .047 28);
+  --highlight-edge: oklch(.762 .096 28);
+  --side-width: 258px; --side-pad: 1.65rem;
+  --login-ratio: 1.6900000000000002fr; --report-stripe: 7px;
+}
